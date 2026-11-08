@@ -10,7 +10,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install uv
-        run: pipx install --quiet uv
+        run: pip install --quiet uv
       - name: Sync (frozen)
         run: uv sync --frozen
       - name: Lint
