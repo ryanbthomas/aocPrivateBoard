@@ -93,6 +93,9 @@ What `harden.sh` actually enforces:
 **Patching**
 
 - `unattended-upgrades` enabled and started, `20auto-upgrades` written
+- Automatic upgrades are started after the script's package installs to avoid
+  racing provisioning steps for the dpkg lock; package commands wait up to
+  five minutes for a transient lock.
 - Deliberately **not** enabling automatic reboot by default; a kernel or libc update needs a reboot to take effect, so decide explicitly
 
 **Kernel / hygiene**

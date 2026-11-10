@@ -19,13 +19,23 @@ warn() { printf '\033[33m[!] %s\033[0m\n' "$*"; }
 die()  { printf '\033[31m[x] %s\033[0m\n' "$*" >&2; exit 1; }
 trap 'warn "FAILED at the step above. Do not close your working SSH session. Recover via Lish (Linode console), then: ufw disable; rm -f /etc/ssh/sshd_config.d/00-hardening.conf; systemctl reload ssh"' ERR
 
+apt_get() {
+  local status=0
+  apt-get -o DPkg::Lock::Timeout=300 "$@" || status=$?
+  if (( status != 0 )); then
+    warn "APT command failed; package-manager processes at failure:"
+    ps -eo pid,ppid,etime,args | grep -E '[a]pt(-get)?|[d]pkg' || true
+  fi
+  return "$status"
+}
+
 # ---------------------------------------------------------------- preflight
 [[ $EUID -eq 0 ]] || die "run as root (sudo)"
 [[ -n "$ADMIN_USER" ]] || die "set ADMIN_USER, e.g. sudo ADMIN_USER=deploy ./harden.sh"
 [[ "$ADMIN_USER" != "root" ]] || die "refusing to harden with ADMIN_USER=root"
 command -v sshd >/dev/null || die "openssh-server is not installed"
 . /etc/os-release
-[[ "${VERSION_ID:-}" == "24.04" ]] || warn "written for 24.04; this is ${VERSION_ID:-unknown}"
+[[ "${VERSION_ID:-}" == "26.04" ]] || warn "written for 26.04; this is ${VERSION_ID:-unknown}"
 
 log "Preflight: ensure $ADMIN_USER exists and has a working public key"
 if ! id -u "$ADMIN_USER" >/dev/null 2>&1; then
@@ -45,9 +55,9 @@ chown "$ADMIN_USER:$ADMIN_USER" "$AK"; chmod 600 "$AK"
 # ---------------------------------------------------------------- packages
 log "Updating base packages"
 export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a
-apt-get update -qq
-apt-get -y -o Dpkg::Options::=--force-confdef \
-           -o Dpkg::Options::=--force-confold upgrade
+apt_get update -qq
+apt_get -y -o Dpkg::Options::=--force-confdef \
+            -o Dpkg::Options::=--force-confold upgrade
 
 # ---------------------------------------------------------------- sshd
 log "Hardening sshd"
@@ -86,7 +96,7 @@ sshd -T | grep -E '^(passwordauthentication|kbdinteractiveauthentication|permitr
 
 # ---------------------------------------------------------------- firewall
 log "Configuring ufw (allow SSH *before* enabling)"
-apt-get install -y ufw
+apt_get install -y ufw
 ufw default deny incoming
 ufw default allow outgoing
 if [[ -n "$SSH_ALLOW_FROM" ]]; then
@@ -100,7 +110,7 @@ ufw status verbose
 
 # ---------------------------------------------------------------- fail2ban
 log "Configuring fail2ban (systemd journal backend - no /var/log/auth.log needed)"
-apt-get install -y fail2ban
+apt_get install -y fail2ban
 cat > /etc/fail2ban/jail.d/sshd.local <<EOF
 [sshd]
 enabled  = true
@@ -118,13 +128,12 @@ fail2ban-client status sshd || warn "sshd jail not listed - check: journalctl -u
 
 # ---------------------------------------------------------------- patching
 log "Enabling unattended security upgrades"
-apt-get install -y unattended-upgrades apt-listchanges
+apt_get install -y unattended-upgrades apt-listchanges
 cat > /etc/apt/apt.conf.d/20auto-upgrades <<'EOF'
 APT::Periodic::Update-Package-Lists "1";
 APT::Periodic::Unattended-Upgrade "1";
 APT::Periodic::AutocleanInterval "7";
 EOF
-systemctl enable --now unattended-upgrades
 # Decide deliberately: kernel/libc updates need a reboot to take effect.
 # To reboot automatically at 03:00 local time, also set in
 # /etc/apt/apt.conf.d/50unattended-upgrades:
@@ -171,7 +180,7 @@ done
 
 if [[ "$INSTALL_AUDITD" == "1" ]]; then
   log "Installing auditd with syscall-form watches"
-  apt-get install -y auditd audispd-plugins
+  apt_get install -y auditd audispd-plugins
 
   cat > /etc/audit/rules.d/hardening.rules <<'EOF'
 ## Identity / privilege files
@@ -205,7 +214,10 @@ EOF
 fi
 
 
-apt-get -y autoremove --purge >/dev/null 2>&1 || true
+apt_get -y autoremove --purge || warn "apt autoremove failed; review package manager state"
+
+# Start automatic upgrades after all provisioning package operations are done.
+systemctl enable --now unattended-upgrades
 
 # ---------------------------------------------------------------- report
 command -v docker >/dev/null && warn "Docker present: published container ports bypass ufw and the sshd jail will not cover them"
