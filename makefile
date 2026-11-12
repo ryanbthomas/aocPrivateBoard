@@ -17,7 +17,10 @@ fmt:	  ## use ruff to format code; automatically fixes issues
 
 check: lint test	## run lint and test
 
-## will add targrets for deploy, logs, backup, and reset-db in the future
+reset-db:	## recreate the development database and apply migrations
+	mkdir -p data-dev
+	rm -f -- data-dev/dev.db data-dev/dev.db-wal data-dev/dev.db-shm
+	DATABASE_URL=sqlite:///./data-dev/dev.db uv run alembic upgrade head
 
 help:
 	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk -F':.*?## ' '{printf "%-10s %s\n", $$1, $$2}'
