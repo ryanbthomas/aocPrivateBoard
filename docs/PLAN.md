@@ -187,6 +187,20 @@ Index: `(year)`
 
 Index: `(year, day, language)`, `(user_id)`, `(sha256)`
 
+### tags
+| Column | Type | Notes |
+|---|---|---|
+| id | INTEGER PK | |
+| name | TEXT UNIQUE NOT NULL | shared concept label, e.g. `Dijkstra's algorithm` |
+| category | TEXT NOT NULL | e.g. `data_structure` / `algorithm` |
+
+### submission_tags
+| Column | Type | Notes |
+|---|---|---|
+| submission_id | INTEGER NOT NULL REFERENCES submissions(id) | |
+| tag_id | INTEGER NOT NULL REFERENCES tags(id) | |
+| PRIMARY KEY | (submission_id, tag_id) | prevents duplicate tags on a submission |
+
 ### analysis
 | Column | Type | Notes |
 |---|---|---|
@@ -231,6 +245,72 @@ Same-language pairs only.
 | action | TEXT NOT NULL | e.g. `aoc.session_expired`, `claim.approved` |
 | target | TEXT NULL | |
 | detail | TEXT NULL | never contains secrets |
+
+### Entity relationship diagram
+
+```mermaid
+erDiagram
+    AOC_MEMBERS {
+        TEXT id PK
+        INTEGER year
+    }
+    USERS {
+        INTEGER id PK
+        TEXT aoc_member_id FK,UK
+    }
+    STARS {
+        TEXT aoc_member_id PK,FK
+        INTEGER year PK
+        INTEGER day PK
+        INTEGER part PK
+    }
+    PUZZLES {
+        INTEGER year PK
+        INTEGER day PK
+    }
+    SUBMISSIONS {
+        INTEGER id PK
+        INTEGER user_id FK
+    }
+    TAGS {
+        INTEGER id PK
+        TEXT name UK
+        TEXT category
+    }
+    SUBMISSION_TAGS {
+        INTEGER submission_id PK,FK
+        INTEGER tag_id PK,FK
+    }
+    ANALYSIS {
+        INTEGER submission_id PK,FK
+    }
+    SIMILARITY {
+        INTEGER a_id PK
+        INTEGER b_id PK
+        TEXT method PK
+    }
+    FETCHES {
+        TEXT url PK
+    }
+    AUDIT_LOG {
+        INTEGER id PK
+        INTEGER actor_user_id
+    }
+
+    AOC_MEMBERS o|--o| USERS : "claimed by"
+    AOC_MEMBERS ||--o{ STARS : "has solved"
+    USERS ||--o{ SUBMISSIONS : "submits"
+    SUBMISSIONS ||--o{ SUBMISSION_TAGS : "labeled with"
+    TAGS ||--o{ SUBMISSION_TAGS : "labels"
+    SUBMISSIONS ||--o| ANALYSIS : "has analysis"
+    SUBMISSIONS ||--o{ SIMILARITY : "compared by a_id"
+    SUBMISSIONS ||--o{ SIMILARITY : "compared by b_id"
+    USERS o|--o{ AUDIT_LOG : "actor"
+```
+
+`SIMILARITY.a_id`/`b_id` and `AUDIT_LOG.actor_user_id` are shown as logical
+references; §6 does not currently declare them as SQL foreign keys. `FETCHES`
+and `PUZZLES` have no relationships in this schema.
 
 **Migrations** are Alembic, up-only, applied on boot (`alembic upgrade head && exec …`)
 or via a `Type=oneshot` unit ordered before `web` and `worker`. Never hand-edit the prod
