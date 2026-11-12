@@ -54,15 +54,6 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("url"),
     )
     op.create_table(
-        "puzzles",
-        sa.Column("year", sa.Integer(), nullable=False),
-        sa.Column("day", sa.Integer(), nullable=False),
-        sa.Column("title", sa.Text(), nullable=True),
-        sa.Column("html", sa.Text(), nullable=False),
-        sa.Column("fetched_at", sa.Text(), nullable=False),
-        sa.PrimaryKeyConstraint("year", "day"),
-    )
-    op.create_table(
         "similarity",
         sa.Column("a_id", sa.Integer(), nullable=False),
         sa.Column("b_id", sa.Integer(), nullable=False),
