@@ -321,7 +321,7 @@ get_json(url, *, fixture_key=None) -> dict      # or raises SessionExpired / AoC
 - TTL: **900 s**, enforced by `fetches.fetched_at` **and** an in-process guard.
 - Conditional requests: send `If-None-Match` / `If-Modified-Since` when cached; `304`
   refreshes `fetched_at` without re-storing.
-- `User-Agent`: descriptive, with a contact address.
+- `User-Agent`: descriptive, with a contact URL (`https://github.com/ryanbthomas/aocPrivateBoard`).
 - Expired session detected by `302`/`401`/`403` **or** login-page markers in the body ⇒
   raise `SessionExpired`, write `audit_log` row, alert once. **Never retry in a loop.**
 - `5xx` ⇒ exponential backoff, hard timeout 20 s, max 3 attempts, then alert.
@@ -453,26 +453,26 @@ are the core value.
 
 ## 10. Issue index
 
-| # | Title | Label | Est. | Depends on |
-|---|---|---|---|---|
-| 2 | Scaffold repo, layout, tooling | infra | 2h | — |
-| 3 | SQLite schema + Alembic baseline | data | 2h | 2 |
-| 4 | Config loader + secret separation | infra, security | 1h | 2 |
-| 5 | Caddy + first systemd deploy | infra | 3h | 2 |
-| 6 | Capture anonymized leaderboard fixture for offline dev | testing, aoc | 1.5h | 2 |
-| 7 | Cached, rate-limited AoC leaderboard fetch client | aoc | 3h | 3,4,6 |
-| 8 | Private leaderboard poller | aoc, worker | 2h | 7 |
-| 9 | Leaderboard views | frontend | 3h | 8 |
-| 10 | Official AoC puzzle links | frontend | 0.5h | 2 |
-| 11 | GitHub OAuth + allowlist + admin | auth | 4h | 3,4 |
-| 12 | Claim an AoC member identity | auth, frontend | 2h | 8,11 |
-| 13 | Upload endpoint + content-addressed storage | submissions | 3h | 3,11 |
-| 14 | Static analysis pipeline | analysis | 5h | 13 |
-| 15 | Per-day comparison + diff viewer | frontend, analysis | 3h | 14 |
-| 16 | Similarity detection | analysis | 4h | 14 |
-| 17 | Backups + monitoring | ops | 2h | 5 |
-| 18 | Event-mode runbook | ops | 1h | 17 |
-| 19 | Open questions / pending decisions | discussion | — | — |
+| # | Title | Label | Est. | Depends on | Completed|
+|---|---|---|---|---|---|
+| 2 | Scaffold repo, layout, tooling | infra | 2h | — | Yes |
+| 3 | SQLite schema + Alembic baseline | data | 2h | 2 | Yes |
+| 4 | Config loader + secret separation | infra, security | 1h | 2 | Yes |
+| 5 | Caddy + first systemd deploy | infra | 3h | 2 | Partial, blocked on domain |
+| 6 | Capture anonymized leaderboard fixture for offline dev | testing, aoc | 1.5h | 2 | Yes |
+| 7 | Cached, rate-limited AoC leaderboard fetch client | aoc | 3h | 3,4,6 | Yes |
+| 8 | Private leaderboard poller | aoc, worker | 2h | 7 | |
+| 9 | Leaderboard views | frontend | 3h | 8 | |
+| 10 | Official AoC puzzle links | frontend | 0.5h | 2 | |
+| 11 | GitHub OAuth + allowlist + admin | auth | 4h | 3,4 | |
+| 12 | Claim an AoC member identity | auth, frontend | 2h | 8,11 | |
+| 13 | Upload endpoint + content-addressed storage | submissions | 3h | 3,11 | |
+| 14 | Static analysis pipeline | analysis | 5h | 13 | |
+| 15 | Per-day comparison + diff viewer | frontend, analysis | 3h | 14 | |
+| 16 | Similarity detection | analysis | 4h | 14 | |
+| 17 | Backups + monitoring | ops | 2h | 5 | |
+| 18 | Event-mode runbook | ops | 1h | 17 | |
+| 19 | Open questions / pending decisions | discussion | — | — | |
 
 ### Execution order
 
