@@ -239,6 +239,16 @@ Same-language pairs only.
 | target | TEXT NULL | |
 | detail | TEXT NULL | never contains secrets |
 
+### worker_heartbeat
+| Column | Type | Notes |
+|---|---|---|
+| worker_name | TEXT PK | singleton row per worker |
+| last_cycle_at | TEXT NOT NULL | UTC timestamp of the most recent cycle |
+| last_success_at | TEXT NULL | UTC timestamp of the most recent successful cycle |
+| status | TEXT NOT NULL | `ok` / `error` |
+| consecutive_failures | INTEGER NOT NULL | zero or greater; reset on success |
+| detail | TEXT NULL | safe error type only; never contains secrets |
+
 ### Entity relationship diagram
 
 ```mermaid
@@ -285,6 +295,9 @@ erDiagram
         INTEGER id PK
         INTEGER actor_user_id
     }
+    WORKER_HEARTBEAT {
+        TEXT worker_name PK
+    }
 
     AOC_MEMBERS o|--o| USERS : "claimed by"
     AOC_MEMBERS ||--o{ STARS : "has solved"
@@ -299,7 +312,8 @@ erDiagram
 
 `SIMILARITY.a_id`/`b_id` and `AUDIT_LOG.actor_user_id` are shown as logical
 references; §6 does not currently declare them as SQL foreign keys. `FETCHES`
-has no relationships in this schema. Puzzle links are derived from year/day and
+has no relationships in this schema. `WORKER_HEARTBEAT` is operational state with no
+foreign-key relationships. Puzzle links are derived from year/day and
 are not stored in the database.
 
 **Migrations** are Alembic, up-only, applied on boot (`alembic upgrade head && exec …`)
@@ -339,7 +353,10 @@ get_json(url, *, fixture_key=None) -> dict      # or raises SessionExpired / AoC
 | `python -m app.worker --recompute-similarity` | rebuild `similarity` for a year/day |
 
 Scheduling: poll at **:02 and :17** past each hour from Dec 1 to Dec 12 inclusive;
-once daily outside that window. Offsets avoid the 00:00 EST release stampede.
+once daily at 12:02 UTC outside that window. Offsets avoid the 00:00 EST release
+stampede. Each cycle updates the worker heartbeat; after two consecutive poll
+failures, the worker emits one structured warning and resets the failure streak
+after a successful cycle.
 
 ### 7.3 Configuration
 
@@ -461,7 +478,7 @@ are the core value.
 | 5 | Caddy + first systemd deploy | infra | 3h | 2 | Partial, blocked on domain |
 | 6 | Capture anonymized leaderboard fixture for offline dev | testing, aoc | 1.5h | 2 | Yes |
 | 7 | Cached, rate-limited AoC leaderboard fetch client | aoc | 3h | 3,4,6 | Yes |
-| 8 | Private leaderboard poller | aoc, worker | 2h | 7 | |
+| 8 | Private leaderboard poller | aoc, worker | 2h | 7 | Yes |
 | 9 | Leaderboard views | frontend | 3h | 8 | |
 | 10 | Official AoC puzzle links | frontend | 0.5h | 2 | |
 | 11 | GitHub OAuth + allowlist + admin | auth | 4h | 3,4 | |

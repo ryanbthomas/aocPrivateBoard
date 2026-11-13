@@ -159,3 +159,21 @@ class AuditLog(Base):
     action: Mapped[str] = mapped_column(Text, nullable=False)
     target: Mapped[str | None] = mapped_column(Text)
     detail: Mapped[str | None] = mapped_column(Text)
+
+
+class WorkerHeartbeat(Base):
+    __tablename__ = "worker_heartbeat"
+    __table_args__ = (
+        CheckConstraint("status IN ('ok', 'error')", name="ck_worker_heartbeat_status"),
+        CheckConstraint(
+            "consecutive_failures >= 0",
+            name="ck_worker_heartbeat_consecutive_failures",
+        ),
+    )
+
+    worker_name: Mapped[str] = mapped_column(Text, primary_key=True)
+    last_cycle_at: Mapped[str] = mapped_column(Text, nullable=False)
+    last_success_at: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    consecutive_failures: Mapped[int] = mapped_column(Integer, nullable=False)
+    detail: Mapped[str | None] = mapped_column(Text)

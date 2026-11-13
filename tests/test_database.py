@@ -77,6 +77,7 @@ def test_upgrade_removes_legacy_puzzles_table(tmp_path: Path, monkeypatch) -> No
             "similarity",
             "fetches",
             "audit_log",
+            "worker_heartbeat",
             "alembic_version",
         }
 
