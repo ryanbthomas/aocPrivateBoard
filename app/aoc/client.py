@@ -5,6 +5,7 @@ import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
@@ -12,11 +13,11 @@ import httpx2
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
-from app.aoc import load_leaderboard_fixture
 from app.config import ConfigurationError, Settings
 from app.models import AuditLog, Fetch
 
 logger = logging.getLogger(__name__)
+LEADERBOARD_FIXTURES = Path(__file__).resolve().parents[2] / "tests" / "fixtures"
 
 USER_AGENT = "aocPrivateBoard/0.1 (+https://github.com/ryanbthomas/aocPrivateBoard)"
 CACHE_TTL = timedelta(seconds=900)
@@ -75,7 +76,7 @@ class AoCFetchClient:
         self._validate_leaderboard_url(url)
         if self._settings.aoc_fixtures:
             try:
-                return load_leaderboard_fixture(url)
+                return self._load_leaderboard_fixture(url)
             except (OSError, ValueError, json.JSONDecodeError) as error:
                 raise AoCError(
                     "Unable to load the configured leaderboard fixture"
@@ -274,6 +275,19 @@ class AoCFetchClient:
             url=url,
             status_code=status_code,
         )
+
+    def _load_leaderboard_fixture(self, url: str) -> dict[str, Any]:
+        path_parts = urlparse(url).path.strip("/").split("/")
+        year = path_parts[0] if path_parts else ""
+        if len(year) != 4 or not year.isdecimal():
+            raise ValueError(f"Unable to determine AoC year from URL: {url}")
+
+        fixture_path = LEADERBOARD_FIXTURES / f"leaderboard_{year}.json"
+        with fixture_path.open(encoding="utf-8") as fixture:
+            payload = json.load(fixture)
+        if not isinstance(payload, dict):
+            raise AoCError("Leaderboard fixture must be a JSON object")
+        return payload
 
     def _report_once(
         self, incident: tuple[str, str], message: str, **details: object

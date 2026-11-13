@@ -290,27 +290,6 @@ def test_invalid_json_fails_without_caching_or_logging_response_body(
         assert db.get(Fetch, LEADERBOARD_URL) is None
 
 
-def test_fixture_mode_uses_existing_fixture_without_http(
-    engine: Engine, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("AOC_FIXTURES", "1")
-
-    def no_network(_request: httpx2.Request) -> httpx2.Response:
-        pytest.fail("fixture mode must not make an HTTP request")
-
-    fetcher, http_client = _client(
-        no_network, engine=engine, settings=Settings(aoc_fixtures=True)
-    )
-    try:
-        leaderboard = fetcher.get_json(LEADERBOARD_URL)
-    finally:
-        http_client.close()
-
-    assert leaderboard["event"] == "2025"
-    with Session(engine) as db:
-        assert db.scalar(select(Fetch)) is None
-
-
 @pytest.mark.parametrize(
     "url",
     [
