@@ -1,7 +1,7 @@
 # Puzzle Scoreboard — Architecture & Delivery Plan
 
 - **Status:** draft, active
-- **Last updated:** 2026-11-08
+- **Last updated:** 2026-11-12
 - **Owner:** @ryanbthomas
 - **Event target:** Advent of Code 2026 — opens 2026-12-01 00:00 EST (05:00 UTC), runs 12 days, closes 2026-12-12
 - **Related:** `README.md` (local setup), `docs/RUNBOOK.md` (extracted from §15 when written)
@@ -18,7 +18,7 @@ A private, invite-only web app for a group of fewer than 20 people participating
 Advent of Code. It does four things:
 
 1. **Mirrors the AoC private leaderboard** — fetched server-side, cached, rendered with our own scoring on top.
-2. **Shows each day's puzzle** — fetched once, parsed, cached, rendered behind login with attribution and a link back to adventofcode.com.
+2. **Links to each day's puzzle** — each year/day links to its official Advent of Code page, opening in a new tab; the app does not fetch, store, or reproduce puzzle statements.
 3. **Accepts solution uploads** — files or pasted text, stored content-addressed, attributed to a claimed AoC identity.
 4. **Compares submissions** — static analysis only: metrics, side-by-side diffs, similarity fingerprints. **Uploaded code is never executed.**
 
@@ -33,7 +33,7 @@ Everything is authenticated. There is no public read path.
 | AoC 2026 runs **12 days** (Dec 1–12), not 25 | Optimise for a two-week burst; batch and offline designs are viable |
 | Private leaderboard JSON is **undocumented** and AoC asks for **≤1 poll / 15 min** | Exactly one server-side poller with a cache. No per-user fetch, no "refresh" button that hits AoC |
 | AoC auth is a **session cookie** (~1 month lifetime) | Cookie is a long-lived credential: server-side only, never logged, expiry is an *expected* failure mode with an alarm |
-| Puzzle text is AoC copyright; per-user inputs are private | Puzzle HTML stays behind login, `noindex`, with attribution; never in a public repo |
+| AoC asks users not to reproduce puzzle statements | Link to the official AoC page; never fetch, cache, embed, or redistribute puzzle text |
 | **No code execution** | Removes sandboxing entirely — no containers, no resource limits, no escape risk. Analysis is pure text processing |
 | **< 20 users**, invite-only | No horizontal scaling, no queue infrastructure, no Kubernetes. One small VPS, two processes |
 | One developer, **fragmented time** over ~3 weeks | Environment must be one command after a 3-week gap; deploy path decided in week 1 and not revisited |
@@ -51,7 +51,7 @@ Modular monolith, two long-running processes from one codebase.
     :443      │   │                                                     │
               │   ├─► web     :127.0.0.1:8000  (uvicorn, 2 workers)    │
               │   │     ├─ GitHub OAuth + allowlist                     │
-              │   │     ├─ leaderboard / puzzle / upload / diff views   │
+              │   │     ├─ leaderboard / puzzle links / upload / diff views │
               │   │     └─ reads+writes SQLite (WAL)                    │
               │   │                                                     │
               │   └─► worker  (python -m app.worker)                    │
@@ -84,7 +84,7 @@ is out of scope. See D15.
 | D5 | AoC access | **Single server-side poller, cache-first, ≤1 network request / 15 min** | AoC's stated limit; per-user refresh would violate it | **No — non-negotiable** |
 | D6 | AoC auth | **Session cookie, server-side only**; test whether `view_key` works on the `.json` endpoint and prefer it if so (see Q1) | Cookie expires monthly; `view_key` would remove the credential class entirely | Yes |
 | D7 | App auth | **GitHub OAuth** + explicit allowlist | Members already have GitHub; zero passwords stored; stable identity | Yes (magic-link fallback) |
-| D8 | Puzzle storage | Parse + cache HTML in DB; render behind login, `noindex`, attributed | Copyright + private inputs | **No** |
+| D8 | Puzzle access | Link each year/day to `https://adventofcode.com/{year}/day/{day}` in a new tab; do not fetch, store, or render puzzle statements | Respects the creator's request not to reproduce puzzle text | **No** |
 | D9 | Scoring | **Compute our own** from star timestamps | Enables placement points, consistency, custom categories | Yes |
 | D10 | Upload storage | **Content-addressed on disk** (`uploads/<sha256>.<ext>`) + metadata row | Dedupes identical submissions; small DB; trivial backup | Yes |
 | D11 | Analysis | **Static only** — tree-sitter parse, metrics, normalized diff, winnowing similarity. **No execution** | Eliminates the hardest security problem | Yes (execution = separate project) |
@@ -95,8 +95,9 @@ is out of scope. See D15.
 
 ### 4.1 Consequences we accept
 
-- **Pre-event testing needs fixtures.** AoC data cannot be fetched before Dec 1, so saved
-  HTML/JSON fixtures are a week-1 deliverable, not an afterthought (Issue 5).
+- **Pre-event leaderboard testing needs a fixture.** AoC leaderboard data is unavailable
+  before Dec 1, so keep one anonymized leaderboard JSON fixture (Issue 6). Puzzle pages
+  are external links and need no fixtures; HTTP error/session cases use mocked responses.
 - **No artifact-level rollback.** Rollback is `git checkout <tag>`. OS library drift is a
   real if unlikely risk; mitigated by pinned Python via `uv` and CI running the suite in
   a clean container on every push.
@@ -162,14 +163,6 @@ Index: `(year)`
 | part | INTEGER NOT NULL | 1..2 |
 | solved_at | TEXT NOT NULL | UTC; drives all our scoring |
 | PRIMARY KEY | (aoc_member_id, year, day, part) | makes polling idempotent |
-
-### puzzles
-| Column | Type | Notes |
-|---|---|---|
-| year, day | INTEGER | composite PK |
-| title | TEXT | |
-| html | TEXT NOT NULL | sanitised, relative links rewritten |
-| fetched_at | TEXT NOT NULL | immutable once stored |
 
 ### submissions
 | Column | Type | Notes |
@@ -264,10 +257,6 @@ erDiagram
         INTEGER day PK
         INTEGER part PK
     }
-    PUZZLES {
-        INTEGER year PK
-        INTEGER day PK
-    }
     SUBMISSIONS {
         INTEGER id PK
         INTEGER user_id FK
@@ -310,7 +299,8 @@ erDiagram
 
 `SIMILARITY.a_id`/`b_id` and `AUDIT_LOG.actor_user_id` are shown as logical
 references; §6 does not currently declare them as SQL foreign keys. `FETCHES`
-and `PUZZLES` have no relationships in this schema.
+has no relationships in this schema. Puzzle links are derived from year/day and
+are not stored in the database.
 
 **Migrations** are Alembic, up-only, applied on boot (`alembic upgrade head && exec …`)
 or via a `Type=oneshot` unit ordered before `web` and `worker`. Never hand-edit the prod
@@ -335,8 +325,9 @@ get_json(url, *, fixture_key=None) -> dict      # or raises SessionExpired / AoC
 - Expired session detected by `302`/`401`/`403` **or** login-page markers in the body ⇒
   raise `SessionExpired`, write `audit_log` row, alert once. **Never retry in a loop.**
 - `5xx` ⇒ exponential backoff, hard timeout 20 s, max 3 attempts, then alert.
-- `AOC_FIXTURES=1` ⇒ read `tests/fixtures/` instead of the network. Fetcher tests assert
-  request counts through a mocked transport.
+- `AOC_FIXTURES=1` ⇒ serve the anonymized leaderboard JSON fixture instead of making a
+  leaderboard request. HTTP error and expired-session tests use mocked responses, not
+  saved AoC pages.
 
 ### 7.2 Worker entrypoints
 
@@ -362,7 +353,7 @@ pydantic-settings; prod boot fails loudly if a required secret is missing.
 | `AOC_YEAR` | current | |
 | `AOC_LEADERBOARD_ID` | — | from the private leaderboard URL |
 | `AOC_SESSION` | — | **prod required**; env or `$CREDENTIALS_DIRECTORY/aoc_session`; never logged |
-| `AOC_FIXTURES` | `0` | `1` in dev by default |
+| `AOC_FIXTURES` | `0` | `1` uses the anonymized leaderboard JSON fixture |
 | `AOC_VIEW_KEY` | unset | if Q1 resolves favourably, preferred over the cookie |
 | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | — | OAuth app |
 | `SESSION_SECRET` | — | signs session cookies |
@@ -404,13 +395,12 @@ aoc-scoreboard/
     main.py            FastAPI app, middleware, routes
     auth.py            GitHub OAuth, allowlist, session, dependencies
     models.py          SQLAlchemy models (§6)
-    views/             leaderboard, puzzle, upload, compare, admin
+    views/             leaderboard, puzzle links, upload, compare, admin
     templates/         Jinja2
     static/            minimal CSS
     aoc/
       client.py        the §7.1 contract
       leaderboard.py   JSON → aoc_members + stars
-      puzzles.py       HTML → sanitised article blocks
     worker/
       __main__.py      entrypoints (§7.2)
       scheduler.py
@@ -422,7 +412,7 @@ aoc-scoreboard/
       diff.py          difflib wrappers
   migrations/          alembic
   tests/
-    fixtures/          leaderboard_2024.json, day01.html, expired_session.html
+    fixtures/          anonymized leaderboard JSON only
   deploy/
     Caddyfile
     aocboard-web.service
@@ -445,13 +435,13 @@ what makes them testable in 2 seconds and workable in 20-minute slices.
 |---|---|---|
 | **M0 — Deployable skeleton** | Nov 10 | "Hello" page live on the VPS behind Caddy with TLS; `make dev` and `make deploy` both work |
 | **M1 — Scoreboard** | Nov 17 | Real private leaderboard rendered from fixtures, then from a live poll |
-| **M2 — Puzzles + auth** | Nov 22 | An allowlisted GitHub user can log in and read cached puzzle text |
+| **M2 — Puzzle links + auth** | Nov 22 | An allowlisted GitHub user can log in and open each official year/day puzzle page in a new tab |
 | **M3 — Submissions** | Nov 27 | Uploads work; metrics and diff views render |
 | **M4 — Freeze** | **Nov 29** | `v0.9` tagged. No feature work after this date |
 | **M5 — Event** | Dec 1–12 | Bugfixes only; cookie re-paste if needed |
 
 Schedule buffer is thin by design: ~46 h of estimated work across ~23 days of fragmented
-time. If something must be cut, cut similarity (Issue 15) — the scoreboard and uploads
+time. If something must be cut, cut similarity (Issue 16) — the scoreboard and uploads
 are the core value.
 
 ---
@@ -460,42 +450,43 @@ are the core value.
 
 | # | Title | Label | Est. | Depends on |
 |---|---|---|---|---|
-| 1 | Scaffold repo, layout, tooling | infra | 2h | — |
-| 2 | SQLite schema + Alembic baseline | data | 2h | 1 |
-| 3 | Config loader + secret separation | infra, security | 1h | 1 |
-| 4 | Caddy + first systemd deploy | infra | 3h | 1 |
-| 5 | Capture fixtures for offline dev | testing, aoc | 1.5h | 1 |
-| 6 | Cached, rate-limited AoC fetch client | aoc | 3h | 2,3,5 |
-| 7 | Private leaderboard poller | aoc, worker | 2h | 6 |
-| 8 | Leaderboard views | frontend | 3h | 7 |
-| 9 | Puzzle fetch, parse, cached rendering | aoc, frontend | 4h | 6 |
-| 10 | GitHub OAuth + allowlist + admin | auth | 4h | 2,3 |
-| 11 | Claim an AoC member identity | auth, frontend | 2h | 7,10 |
-| 12 | Upload endpoint + content-addressed storage | submissions | 3h | 2,10 |
-| 13 | Static analysis pipeline | analysis | 5h | 12 |
-| 14 | Per-day comparison + diff viewer | frontend, analysis | 3h | 13 |
-| 15 | Similarity detection | analysis | 4h | 13 |
-| 16 | Backups + monitoring | ops | 2h | 4 |
-| 17 | Event-mode runbook | ops | 1h | 16 |
-| 18 | Open questions / pending decisions | discussion | — | — |
+| 2 | Scaffold repo, layout, tooling | infra | 2h | — |
+| 3 | SQLite schema + Alembic baseline | data | 2h | 2 |
+| 4 | Config loader + secret separation | infra, security | 1h | 2 |
+| 5 | Caddy + first systemd deploy | infra | 3h | 2 |
+| 6 | Capture anonymized leaderboard fixture for offline dev | testing, aoc | 1.5h | 2 |
+| 7 | Cached, rate-limited AoC leaderboard fetch client | aoc | 3h | 3,4,6 |
+| 8 | Private leaderboard poller | aoc, worker | 2h | 7 |
+| 9 | Leaderboard views | frontend | 3h | 8 |
+| 10 | Official AoC puzzle links | frontend | 0.5h | 2 |
+| 11 | GitHub OAuth + allowlist + admin | auth | 4h | 3,4 |
+| 12 | Claim an AoC member identity | auth, frontend | 2h | 8,11 |
+| 13 | Upload endpoint + content-addressed storage | submissions | 3h | 3,11 |
+| 14 | Static analysis pipeline | analysis | 5h | 13 |
+| 15 | Per-day comparison + diff viewer | frontend, analysis | 3h | 14 |
+| 16 | Similarity detection | analysis | 4h | 14 |
+| 17 | Backups + monitoring | ops | 2h | 5 |
+| 18 | Event-mode runbook | ops | 1h | 17 |
+| 19 | Open questions / pending decisions | discussion | — | — |
 
 ### Execution order
 
 ```
-1 ─┬─ 4  (get it live — critical early win)
-   ├─ 2 ─┬─ 6 ─┬─ 7 ─┬─ 8
-   │     │     │     └─ 9
-   │     │     └─ (5 in parallel, before 6)
-   │     ├─ 10 ─── 11
-   │     └─ 12 ─── 13 ─┬─ 14
-   │                   └─ 15
-   └─ 3
-16 ─ 17
+2 ─┬─ 5 ─── 17 ─── 18
+   ├─ 3 ─┬─ 7 ─── 8 ─── 9
+   │     │         └──── 12 (with 11)
+   │     ├─ 11 ──── 12, 13
+   │     └─ 13 ──── 14 ─┬─ 15
+   │                    └─ 16
+   ├─ 4 ───┬─ 7
+   │       └─ 11
+   ├─ 6 ────── 7
+   └─ 10
 ```
 
-Recommended sequence: **1 → 4 → 2 → 5 → 3 → 6 → 7 → 8 → 9 → 10 → 12 → 13 → 14 → 15 → 16 → 17.**
+Recommended sequence: **2 → 5 → 3 → 4 → 6 → 7 → 8 → 9 → 10 → 11 → 12 → 13 → 14 → 15 → 16 → 17 → 18.**
 
-Ticket shape matters for fragmented time: 5, 6, 7, 13, 15 are pure `pytest` work
+Ticket shape matters for fragmented time: 6, 7, 8, 14, 16 are pure `pytest` work
 (no server, no browser) and fit 20-minute slices. 4, 8, 10, 11, 14 need you at a desk
 clicking through the UI — schedule those deliberately.
 
@@ -515,15 +506,15 @@ Priority: `must-have` (M0–M3) · `nice-to-have` (similarity, extra scoring) ·
 These are invariants. Violating one is a bug, not a trade-off.
 
 1. **Never poll AoC more than once per 15 minutes**, from any code path, including
-   local development. Use fixtures.
+   local development. Use the anonymized leaderboard fixture.
 2. **The AoC session cookie never reaches the browser, is never logged, is never
    committed.** It exists only in the `worker`'s environment.
 3. **No code execution.** Not in the app, not in analysis, not "just to check output".
-5. **Puzzle text stays behind login**, `noindex`, with visible attribution and a link
-   back to adventofcode.com.
-6. **No feature deploys after Nov 29.** Bugfixes only, tagged `v1.0.x`.
-7. **Uploaded content is served as `text/plain`** and is never rendered as HTML.
-8. **Scoring is derived, never stored as truth** — `stars` are the record, scores are views.
+4. **Do not reproduce AoC puzzle text.** Link to `https://adventofcode.com/{year}/day/{day}` in a new tab
+   with `target="_blank"` and `rel="noopener noreferrer"`.
+5. **No feature deploys after Nov 29.** Bugfixes only, tagged `v1.0.x`.
+6. **Uploaded content is served as `text/plain`** and is never rendered as HTML.
+7. **Scoring is derived, never stored as truth** — `stars` are the record, scores are views.
 
 ---
 
@@ -544,7 +535,7 @@ Parity with prod is protected by two cheap checks rather than by containers:
 
 - **CI** runs `uv sync && pytest` in a clean `python:3.12-slim` container on every push.
 - **Before each deploy**, compare `python -c "import sqlite3; print(sqlite3.sqlite_version)"`
-  on laptop and VPS (recorded once in Issue 2). If the VPS is older, it is the reference
+  on laptop and VPS (recorded once in Issue 3). If the VPS is older, it is the reference
   version for `STRICT` tables and JSON functions.
 
 ---
@@ -615,7 +606,7 @@ cp /tmp/restore/srv/aocboard/data/board.db /srv/aocboard/data/board.db
 sudo chown aocboard:aocboard /srv/aocboard/data/board.db
 sudo systemctl start aocboard-web aocboard-worker
 ```
-Tested once in Issue 16, not first attempted in anger.
+Tested once in Issue 17, not first attempted in anger.
 
 ### 15.6 Dec 1, 05:00 UTC checklist
 
@@ -630,16 +621,15 @@ Tested once in Issue 16, not first attempted in anger.
 
 ## 16. Open questions
 
-Tracked in Issue 18; each needs an answer and a `PLAN.md` edit.
+Tracked in Issue 19; each needs an answer and a `PLAN.md` edit.
 
 | # | Question | Default if unresolved |
 |---|---|---|
 | Q1 | Does the private-leaderboard `.json` endpoint accept a `view_key` query param instead of a session cookie? | Assume no; use the cookie |
 | Q2 | Resubmission policy — keep full history, or overwrite latest? | Keep history (audit value, dedupe is free) |
-| Q3 | Show puzzle text at all, or link out only? | Show, behind login, attributed |
-| Q4 | Scoring beyond AoC placement — consistency bonus, language diversity? | Placement only in v0.9; extras post-event |
-| Q5 | Public read-only view after Dec 12? | No |
-| Q6 | Should uploads be visible to all members, or only admins? | All authenticated members |
+| Q3 | Scoring beyond AoC placement — consistency bonus, language diversity? | Placement only in v0.9; extras post-event |
+| Q4 | Public read-only view after Dec 12? | No |
+| Q5 | Should uploads be visible to all members, or only admins? | All authenticated members |
 
 ---
 

@@ -70,16 +70,6 @@ class Star(Base):
     solved_at: Mapped[str] = mapped_column(Text, nullable=False)
 
 
-class Puzzle(Base):
-    __tablename__ = "puzzles"
-
-    year: Mapped[int] = mapped_column(Integer, primary_key=True)
-    day: Mapped[int] = mapped_column(Integer, primary_key=True)
-    title: Mapped[str | None] = mapped_column(Text)
-    html: Mapped[str] = mapped_column(Text, nullable=False)
-    fetched_at: Mapped[str] = mapped_column(Text, nullable=False)
-
-
 class Submission(Base):
     __tablename__ = "submissions"
     __table_args__ = (

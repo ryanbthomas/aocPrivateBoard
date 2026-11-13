@@ -44,7 +44,6 @@ def test_baseline_migrates_an_empty_sqlite_database(
             "users",
             "aoc_members",
             "stars",
-            "puzzles",
             "submissions",
             "tags",
             "submission_tags",
