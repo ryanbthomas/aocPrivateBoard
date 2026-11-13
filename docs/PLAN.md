@@ -343,8 +343,13 @@ once daily outside that window. Offsets avoid the 00:00 EST release stampede.
 
 ### 7.3 Configuration
 
-All via environment; `.env` in dev, `/etc/aocboard/env` (mode 0600) in prod.
-pydantic-settings; prod boot fails loudly if a required secret is missing.
+Typed `pydantic-settings`; `.env` in dev, `/etc/aocboard/env` (mode 0600) in prod.
+Production web startup requires GitHub OAuth credentials and `SESSION_SECRET`;
+production worker startup requires `AOC_LEADERBOARD_ID` and `AOC_SESSION`. The
+worker reads `AOC_SESSION` from its environment or
+`$CREDENTIALS_DIRECTORY/aoc_session`; the web process is never given the AoC cookie.
+Missing required production settings stop that process with a clear message that
+does not include secret values. Empty values in `.env` are treated as unset.
 
 | Key | Default | Notes |
 |---|---|---|
@@ -352,11 +357,11 @@ pydantic-settings; prod boot fails loudly if a required secret is missing.
 | `DATABASE_URL` | `sqlite:///./data-dev/dev.db` | prod: `sqlite:////srv/aocboard/data/board.db` |
 | `AOC_YEAR` | current | |
 | `AOC_LEADERBOARD_ID` | — | from the private leaderboard URL |
-| `AOC_SESSION` | — | **prod required**; env or `$CREDENTIALS_DIRECTORY/aoc_session`; never logged |
+| `AOC_SESSION` | — | **worker prod required**; worker only, env or `$CREDENTIALS_DIRECTORY/aoc_session`; never logged |
 | `AOC_FIXTURES` | `0` | `1` uses the anonymized leaderboard JSON fixture |
 | `AOC_VIEW_KEY` | unset | if Q1 resolves favourably, preferred over the cookie |
-| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | — | OAuth app |
-| `SESSION_SECRET` | — | signs session cookies |
+| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | — | **web prod required**; OAuth app |
+| `SESSION_SECRET` | — | **web prod required**; signs session cookies |
 | `ADMIN_GITHUB_LOGIN` | — | bootstrap admin |
 | `ALLOWLIST` | empty | comma-separated logins, or leave empty and approve via UI |
 | `UPLOAD_MAX_BYTES` | `1048576` | |

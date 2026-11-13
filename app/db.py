@@ -1,15 +1,14 @@
-import os
 from pathlib import Path
 from sqlite3 import Connection as SQLiteConnection
 
 from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.pool import ConnectionPoolEntry
 
-DEFAULT_DATABASE_URL = "sqlite:///./data-dev/dev.db"
+from app.config import Settings
 
 
 def create_database_engine(database_url: str | None = None) -> Engine:
-    url = database_url or os.environ.get("DATABASE_URL") or DEFAULT_DATABASE_URL
+    url = database_url or Settings().database_url
     engine = create_engine(url)
 
     if engine.dialect.name == "sqlite":

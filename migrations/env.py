@@ -1,9 +1,9 @@
-import os
 from logging.config import fileConfig
 
 from alembic import context
 
-from app.db import DEFAULT_DATABASE_URL, create_database_engine
+from app.config import load_settings
+from app.db import create_database_engine
 from app.models import Base
 
 config = context.config
@@ -12,7 +12,8 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 target_metadata = Base.metadata
-database_url = os.environ.get("DATABASE_URL") or DEFAULT_DATABASE_URL
+settings = load_settings("migration")
+database_url = settings.database_url
 config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
 
 
