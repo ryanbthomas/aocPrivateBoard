@@ -1,13 +1,14 @@
 import json
-import os
 from pathlib import Path
 from urllib.parse import urlparse
+
+from app.config import Settings
 
 LEADERBOARD_FIXTURES = Path(__file__).resolve().parents[2] / "tests" / "fixtures"
 
 
 def json_url(url: str) -> dict[str, object]:
-    if os.getenv("AOC_FIXTURES") == "1":
+    if Settings().aoc_fixtures:
         path_parts = urlparse(url).path.strip("/").split("/")
         year = path_parts[0] if path_parts else ""
         if len(year) != 4 or not year.isdecimal():

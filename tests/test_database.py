@@ -31,6 +31,32 @@ def test_baseline_migrates_an_empty_sqlite_database(
     config = Config("alembic.ini")
 
     command.upgrade(config, "head")
+
+
+def test_upgrade_removes_legacy_puzzles_table(tmp_path: Path, monkeypatch) -> None:
+    database_path = tmp_path / "legacy.db"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{database_path}")
+    config = Config("alembic.ini")
+
+    command.upgrade(config, "ddc45664563f")
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            "CREATE TABLE puzzles "
+            "(year INTEGER NOT NULL, day INTEGER NOT NULL, html TEXT NOT NULL, "
+            "fetched_at TEXT NOT NULL, PRIMARY KEY (year, day))"
+        )
+
+    command.upgrade(config, "head")
+    command.check(config)
+
+    with sqlite3.connect(database_path) as connection:
+        table_names = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+    assert "puzzles" not in table_names
     command.check(config)
 
     with sqlite3.connect(database_path) as connection:
